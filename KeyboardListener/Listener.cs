@@ -12,7 +12,7 @@ namespace KeyboardListener
         private bool _switch = true;
         private bool started = false;
 
-        private Dictionary<Action<bool>, int> handlers = [];
+        private Dictionary<Action<bool>, WinKeys.Keys> handlers = [];
         private Dictionary<Action<HotKey, bool>, HotKey> hotKeysHandlers = [];
         private static Listener listener = new();
         public static Listener GetListener() => listener;
@@ -20,24 +20,24 @@ namespace KeyboardListener
         public async void Start()
         {
             _switch = started = true;
-            await Task.Run(() =>
-            {
-                while (_switch)
+            if (!started)
+                await Task.Run(() =>
                 {
-                    CatchKeys();
-                    CatchHotKeys();
-                }
-            }
-        );
+                    while (_switch)
+                    {
+                        CatchKeys();
+                        CatchHotKeys();
+                    }
+                });
         }
 
         public void Stop() => _switch = started = false;
 
-        public bool AddKeyHook(int keyCode, Action<bool> handler)
+        public bool AddKeyHook(WinKeys.Keys key, Action<bool> handler)
         {
             if (handler != null)
             {
-                handlers.Add(handler, keyCode);
+                handlers.Add(handler, key);
                 return true;
             }
 
@@ -72,18 +72,31 @@ namespace KeyboardListener
 
         private void CatchHotKeys()
         {
-            throw new NotImplementedException();
+            foreach (var hotKeyHandler in hotKeysHandlers)
+            {
+                while (GetAsyncKeyState(((int)hotKeyHandler.Value.Modifier)) < 0)
+                {
+                    if (GetAsyncKeyState(((int)hotKeyHandler.Value.Key)) < 0)
+                    {
+                        hotKeyHandler.Key(hotKeyHandler.Value, true);
+                        Thread.Sleep(100);
+
+                        if (GetAsyncKeyState(((int)hotKeyHandler.Value.Key)) == 0)
+                            hotKeyHandler.Key(hotKeyHandler.Value, false);
+                    }
+                }
+            }
         }
         private void CatchKeys()
         {
-            foreach (var handle in handlers)
+            foreach (var handler in handlers)
             {
-                if (GetAsyncKeyState(handle.Value) < 0)
+                if (GetAsyncKeyState(((int)handler.Value)) < 0)
                 {
                     Thread.Sleep(100);
-                    if (GetAsyncKeyState(handle.Value) == 0)
-                        handle.Key(false);
-                    else handle.Key(true);
+                    if (GetAsyncKeyState(((int)handler.Value)) < 0)
+                        handler.Key(true);
+                    else handler.Key(false);
                 }
             }
         }
