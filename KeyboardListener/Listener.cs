@@ -11,30 +11,30 @@ namespace KeyboardListener
         private static extern short GetAsyncKeyState(int keyCode);
         #endregion
 
-        private bool _switch = true;
         private bool started = false;
 
         private Dictionary<Action<bool>, KeyState> handlers = [];
-        private Dictionary<Action<HotKey, bool>, HotKey> hotKeysHandlers = [];
+        private Dictionary<Action<bool>, List<KeyState>> hotKeysHandlers = [];
         private static Listener listener = new();
         public static Listener GetListener() => listener;
 
         public async void Start()
         {
-            _switch = true;
             if (!started)
+            {
                 started = true;
                 await Task.Run(() =>
                 {
-                    while (_switch)
+                    while (started)
                     {
                         CatchKeys();
                         CatchHotKeys();
                     }
                 });
+            }
         }
 
-        public void Stop() => _switch = started = false;
+        public void Stop() => started = false;
 
         public bool AddKeyHook(WinKeys.Keys key, Action<bool> handler)
         {
@@ -46,11 +46,14 @@ namespace KeyboardListener
 
             return false;
         }
-        public bool AddHotKeyHook(HotKey hotKey, Action<HotKey, bool> handler)
+        public bool AddHotKeyHook(HotKey hotKey, Action<bool> handler)
         {
             if (handler != null)
             {
-                hotKeysHandlers.Add(handler, hotKey);
+                hotKeysHandlers.Add(handler, new List<KeyState>{
+                    new KeyState((Keys)hotKey.Modifier,false),
+                    new KeyState(hotKey.Key,false)});
+
                 return true;
             }
 
@@ -65,7 +68,7 @@ namespace KeyboardListener
             return false;
         }
 
-        public bool RemoveHotKeyHook(Action<HotKey, bool> handler)
+        public bool RemoveHotKeyHook(Action<bool> handler)
         {
             if (hotKeysHandlers != null)
                 return hotKeysHandlers.Remove(handler);
@@ -77,16 +80,27 @@ namespace KeyboardListener
         {
             foreach (var hotKeyHandler in hotKeysHandlers)
             {
-                while (GetAsyncKeyState(((int)hotKeyHandler.Value.Modifier)) < 0)
-                {
-                    if ((GetAsyncKeyState(((int)hotKeyHandler.Value.Key))) < 0)
-                    {
-                        hotKeyHandler.Key(hotKeyHandler.Value, true);
-                        Thread.Sleep(100);
+                bool modifierWasRelease = !hotKeyHandler.Value[0].State;
+                bool modifierIsPressed =
+                    GetAsyncKeyState(((int)hotKeyHandler.Value[0].Key)) < 0;
 
-                        if (GetAsyncKeyState(((int)hotKeyHandler.Value.Key)) == 0)
-                            hotKeyHandler.Key(hotKeyHandler.Value, false);
-                    }
+                bool keyWasRelease = !hotKeyHandler.Value[1].State;
+                bool keyIsPressed =
+                    GetAsyncKeyState(((int)hotKeyHandler.Value[1].Key)) < 0;
+
+                if ((modifierWasRelease && modifierIsPressed)
+                    && (keyWasRelease && keyIsPressed))
+                {
+                    foreach (var key in hotKeyHandler.Value)
+                        key.Switch();
+                    hotKeyHandler.Key(true);
+                }
+                else if ((!modifierWasRelease && !modifierIsPressed)
+                    && (!keyWasRelease && !keyIsPressed))
+                {
+                    foreach (var key in hotKeyHandler.Value)
+                        key.Switch();
+                    hotKeyHandler.Key(false);
                 }
             }
         }
@@ -106,6 +120,7 @@ namespace KeyboardListener
                 }
             }
         }
+
         private Listener() { }
 
         private class KeyState(WinKeys.Keys key, bool state)
