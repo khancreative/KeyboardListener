@@ -1,4 +1,6 @@
-﻿using System.Runtime.InteropServices;
+﻿using KeyboardListener.WinKeys;
+using System.Collections;
+using System.Runtime.InteropServices;
 
 namespace KeyboardListener
 {
@@ -12,15 +14,16 @@ namespace KeyboardListener
         private bool _switch = true;
         private bool started = false;
 
-        private Dictionary<Action<bool>, WinKeys.Keys> handlers = [];
+        private Dictionary<Action<bool>, KeyState> handlers = [];
         private Dictionary<Action<HotKey, bool>, HotKey> hotKeysHandlers = [];
         private static Listener listener = new();
         public static Listener GetListener() => listener;
 
         public async void Start()
         {
-            _switch = started = true;
+            _switch = true;
             if (!started)
+                started = true;
                 await Task.Run(() =>
                 {
                     while (_switch)
@@ -37,7 +40,7 @@ namespace KeyboardListener
         {
             if (handler != null)
             {
-                handlers.Add(handler, key);
+                handlers.Add(handler, new KeyState(key, false));
                 return true;
             }
 
@@ -76,7 +79,7 @@ namespace KeyboardListener
             {
                 while (GetAsyncKeyState(((int)hotKeyHandler.Value.Modifier)) < 0)
                 {
-                    if (GetAsyncKeyState(((int)hotKeyHandler.Value.Key)) < 0)
+                    if ((GetAsyncKeyState(((int)hotKeyHandler.Value.Key))) < 0)
                     {
                         hotKeyHandler.Key(hotKeyHandler.Value, true);
                         Thread.Sleep(100);
@@ -91,15 +94,26 @@ namespace KeyboardListener
         {
             foreach (var handler in handlers)
             {
-                if (GetAsyncKeyState(((int)handler.Value)) < 0)
+                if ((GetAsyncKeyState((int)handler.Value.Key) < 0) && !handler.Value.State)
                 {
-                    Thread.Sleep(100);
-                    if (GetAsyncKeyState(((int)handler.Value)) < 0)
-                        handler.Key(true);
-                    else handler.Key(false);
+                    handler.Key(true);
+                    handler.Value.Switch();
+                }
+                else if ((GetAsyncKeyState((int)handler.Value.Key) >= 0) && handler.Value.State)
+                {
+                    handler.Key(false);
+                    handler.Value.Switch();
                 }
             }
         }
         private Listener() { }
+
+        private class KeyState(WinKeys.Keys key, bool state)
+        {
+            public Keys Key = key;
+            public bool State = state;
+
+            public void Switch() => State = !State;
+        }
     }
 }
